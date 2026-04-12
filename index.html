@@ -6,66 +6,201 @@
   <title>Авторизация</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
-    body { background: #1c1c1e; color: #fff; font-family: -apple-system, BlinkMacSystemFont, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; text-align: center; }
-    .card { background: #2c2c2e; padding: 24px; border-radius: 16px; max-width: 340px; width: 100%; }
-    .status { font-size: 15px; margin: 16px 0; line-height: 1.4; white-space: pre-wrap; word-break: break-all; }
-    .token { background: #1a1a1c; padding: 12px; border-radius: 8px; font-family: monospace; font-size: 12px; margin: 10px 0; user-select: all; cursor: pointer; }
-    .btn { background: #007aff; color: white; border: none; padding: 12px 24px; border-radius: 10px; font-size: 16px; cursor: pointer; margin-top: 10px; width: 100%; }
+    body { 
+      background: #1c1c1e; 
+      color: #fff; 
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif; 
+      display: flex; 
+      align-items: center; 
+      justify-content: center; 
+      min-height: 100vh; 
+      margin: 0; 
+      padding: 20px; 
+      box-sizing: border-box; 
+      text-align: center; 
+    }
+    .card { 
+      background: #2c2c2e; 
+      padding: 24px; 
+      border-radius: 16px; 
+      max-width: 340px; 
+      width: 100%; 
+    }
+    .status { 
+      font-size: 15px; 
+      margin: 16px 0; 
+      line-height: 1.4; 
+      white-space: pre-wrap; 
+      word-break: break-all; 
+    }
+    .token { 
+      background: #1a1a1c; 
+      padding: 12px; 
+      border-radius: 8px; 
+      font-family: monospace; 
+      font-size: 12px; 
+      margin: 10px 0; 
+      user-select: all; 
+      cursor: pointer; 
+      overflow-x: auto;
+    }
+    .btn { 
+      background: #007aff; 
+      color: white; 
+      border: none; 
+      padding: 12px 24px; 
+      border-radius: 10px; 
+      font-size: 16px; 
+      cursor: pointer; 
+      margin-top: 10px; 
+      width: 100%; 
+    }
     .btn:active { background: #005ecb; }
-    .loader { width: 28px; height: 28px; border: 3px solid #4a4a4a; border-top-color: #007aff; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px; }
+    .btn-secondary {
+      background: #3a3a3c;
+      margin-top: 8px;
+    }
+    .loader { 
+      width: 28px; 
+      height: 28px; 
+      border: 3px solid #4a4a4a; 
+      border-top-color: #007aff; 
+      border-radius: 50%; 
+      animation: spin 0.8s linear infinite; 
+      margin: 0 auto 12px; 
+    }
     @keyframes spin { to { transform: rotate(360deg); } }
+    .hidden { display: none; }
   </style>
 </head>
 <body>
   <div class="card">
     <div class="loader" id="loader"></div>
-    <div class="status" id="status">🔄 Подключение...</div>
-    <div id="tokenBlock" style="display:none;">
+    
+    <!-- Шаг 1: Загрузка -->
+    <div id="stepLoading">
+      <div class="status" id="status">🔄 Подключение к Telegram...</div>
+    </div>
+    
+    <!-- Шаг 2: Успех - показываем токен -->
+    <div id="stepSuccess" class="hidden">
+      <div class="status" style="color:#34c759;">✅ Авторизация успешна!</div>
       <div style="font-size:13px;color:#8e8e93;">Ваш токен:</div>
       <div class="token" id="tokenValue" onclick="copyToken()"></div>
       <button class="btn" onclick="copyToken()">📋 Скопировать</button>
       <div style="font-size:12px;color:#8e8e93;margin-top:10px;">
-        Отправьте этот токен в бота @YourBotName
+        Отправьте этот токен в бота <b>@YourBotName</b>
       </div>
     </div>
+    
+    <!-- Шаг 3: Ошибка CORS / сети - показываем инструкцию -->
+    <div id="stepError" class="hidden">
+      <div class="status" id="errorMsg">❌ Ошибка подключения</div>
+      <div style="font-size:13px;color:#8e8e93;margin:16px 0;">
+        <b>Автоматическая авторизация не сработала.</b><br><br>
+        Пожалуйста, получите токен одним из способов:
+      </div>
+      <button class="btn btn-secondary" onclick="openPostman()">🔧 Открыть инструкцию</button>
+      <button class="btn btn-secondary" onclick="closeApp()">↩️ Вернуться в бота</button>
+    </div>
   </div>
+
   <script>
     const API_URL = 'https://node1.cl.hamsterpvp.com/prod/auth/telegram';
+    
     window.onload = async function() {
       const tg = window.Telegram?.WebApp;
       const status = document.getElementById('status');
       const loader = document.getElementById('loader');
-      const tokenBlock = document.getElementById('tokenBlock');
+      const stepLoading = document.getElementById('stepLoading');
+      const stepSuccess = document.getElementById('stepSuccess');
+      const stepError = document.getElementById('stepError');
+      const errorMsg = document.getElementById('errorMsg');
       const tokenValue = document.getElementById('tokenValue');
 
-      if (!tg) { status.innerText = "❌ Откройте в Telegram"; loader.style.display = 'none'; return; }
+      // Проверка окружения
+      if (!tg) {
+        showError("❌ Откройте эту ссылку внутри приложения Telegram");
+        return;
+      }
+      
       tg.expand();
-      if (!tg.initData) { status.innerText = "⚠️ Нет initData"; loader.style.display = 'none'; return; }
+      
+      if (!tg.initData) {
+        showError("⚠️ Не удалось получить данные авторизации.\nУбедитесь, что мини-приложение открыто в правильном боте.");
+        return;
+      }
 
       try {
-        status.innerText = "🔐 Авторизация...";
-        // Отправляем initData напрямую на сервер
+        status.innerText = "🔐 Отправка данных на сервер...";
+        
+        // Пытаемся отправить запрос
         const response = await fetch(API_URL, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
-          body: 'initData=' + encodeURIComponent(tg.initData)
+          mode: 'cors',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Accept': 'application/json'
+          },
+          body: 'initData=' + encodeURIComponent(tg.initData),
+          // Таймаут 10 секунд
+          signal: AbortSignal.timeout(10000)
         });
+
         const data = await response.json();
+        
         if (response.ok && data.code === 0 && data.token) {
-          status.style.display = 'none'; loader.style.display = 'none';
-          tokenBlock.style.display = 'block';
+          // ✅ Успех
+          stepLoading.classList.add('hidden');
+          loader.style.display = 'none';
+          stepSuccess.classList.remove('hidden');
           tokenValue.textContent = data.token;
         } else {
-          status.innerText = `❌ Ошибка: ${data.msg || 'Unknown'}\nПопробуйте ещё раз.`;
-          loader.style.display = 'none';
+          // ❌ Ошибка валидации от сервера
+          const msg = data.msg || 'Неизвестная ошибка';
+          showError(`❌ Ошибка сервера: ${msg}\n(${data.code || 'code: N/A'})`);
         }
       } catch (e) {
-        status.innerText = `❌ Ошибка сети: ${e.message}`; loader.style.display = 'none';
+        // ❌ Сетевая ошибка (чаще всего CORS)
+        console.error('Fetch error:', e);
+        
+        if (e.name === 'TimeoutError') {
+          showError("⏱️ Таймаут подключения.\nПроверьте интернет и попробуйте ещё раз.");
+        } else {
+          // CORS или другая сетевая ошибка
+          showError("🔒 Не удалось подключиться к серверу авторизации.\n\nЭто может быть связано с настройками безопасности.\n\nИспользуйте ручной способ получения токена.");
+        }
       }
     };
+
+    function showError(message) {
+      document.getElementById('stepLoading').classList.add('hidden');
+      document.getElementById('loader').style.display = 'none';
+      document.getElementById('stepError').classList.remove('hidden');
+      document.getElementById('errorMsg').innerText = message;
+    }
+
     function copyToken() {
       const token = document.getElementById('tokenValue').textContent;
-      navigator.clipboard.writeText(token).then(() => alert('✅ Скопировано!')).catch(() => alert('⚠️ Выделите и скопируйте вручную'));
+      if (!token) return;
+      
+      navigator.clipboard.writeText(token).then(() => {
+        Telegram.WebApp.showPopup({
+          title: '✅ Готово!',
+          message: 'Токен скопирован в буфер обмена.\nТеперь вставьте его в чат с ботом.'
+        });
+      }).catch(() => {
+        alert('⚠️ Не удалось скопировать автоматически.\nВыделите текст токена и скопируйте вручную.');
+      });
+    }
+
+    function openPostman() {
+      // Открываем инструкцию в браузере (замените на вашу ссылку)
+      Telegram.WebApp.openLink('https://your-instructions.com/how-to-get-token');
+    }
+
+    function closeApp() {
+      Telegram.WebApp.close();
     }
   </script>
 </body>
