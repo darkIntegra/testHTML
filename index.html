@@ -71,6 +71,17 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
     .hidden { display: none; }
+    .log {
+      font-size: 11px;
+      color: #666;
+      margin-top: 10px;
+      text-align: left;
+      background: #1a1a1c;
+      padding: 8px;
+      border-radius: 6px;
+      max-height: 100px;
+      overflow-y: auto;
+    }
   </style>
 </head>
 <body>
@@ -79,10 +90,11 @@
     
     <!-- Шаг 1: Загрузка -->
     <div id="stepLoading">
-      <div class="status" id="status">🔄 Подключение к Telegram...</div>
+      <div class="status" id="status">🔄 Подключение...</div>
+      <div class="log" id="debugLog"></div>
     </div>
     
-    <!-- Шаг 2: Успех - показываем токен -->
+    <!-- Шаг 2: Успех -->
     <div id="stepSuccess" class="hidden">
       <div class="status" style="color:#34c759;">✅ Авторизация успешна!</div>
       <div style="font-size:13px;color:#8e8e93;">Ваш токен:</div>
@@ -93,49 +105,70 @@
       </div>
     </div>
     
-    <!-- Шаг 3: Ошибка CORS / сети - показываем инструкцию -->
+    <!-- Шаг 3: Ошибка -->
     <div id="stepError" class="hidden">
-      <div class="status" id="errorMsg">❌ Ошибка подключения</div>
+      <div class="status" id="errorMsg">❌ Ошибка</div>
       <div style="font-size:13px;color:#8e8e93;margin:16px 0;">
         <b>Автоматическая авторизация не сработала.</b><br><br>
-        Пожалуйста, получите токен одним из способов:
+        Попробуйте:
       </div>
-      <button class="btn btn-secondary" onclick="openPostman()">🔧 Открыть инструкцию</button>
-      <button class="btn btn-secondary" onclick="closeApp()">↩️ Вернуться в бота</button>
+      <button class="btn" onclick="retryAuth()">🔄 Повторить</button>
+      <button class="btn btn-secondary" onclick="showManual()">📝 Ручной ввод</button>
+      <button class="btn btn-secondary" onclick="closeApp()">↩️ В бота</button>
+      
+      <div id="manualBlock" class="hidden" style="margin-top:16px;text-align:left;">
+        <div style="font-size:12px;color:#8e8e93;">
+          1. Получите токен из главного источника (@MainBot или веб-интерфейс)<br>
+          2. Скопируйте его<br>
+          3. Вставьте сообщением в чат с этим ботом
+        </div>
+      </div>
     </div>
   </div>
 
   <script>
-    const API_URL = 'https://node1.cl.hamsterpvp.com/prod/auth/telegram';
+    // 🔥 Конфигурация
+    const TARGET_URL = 'https://node1.cl.hamsterpvp.com/prod/auth/telegram';
+    
+    // 🔥 ТВОЙ ПРОКСИ (уже вставлен!)
+    const PROXY_URL = 'https://auth-proxy.integra4220.workers.dev/auth/telegram';
+    
+    // Переключатель: true = использовать прокси, false = прямой запрос
+    const USE_PROXY = true;
+    
+    let tg, status, loader, debugLog;
     
     window.onload = async function() {
-      const tg = window.Telegram?.WebApp;
-      const status = document.getElementById('status');
-      const loader = document.getElementById('loader');
-      const stepLoading = document.getElementById('stepLoading');
-      const stepSuccess = document.getElementById('stepSuccess');
-      const stepError = document.getElementById('stepError');
-      const errorMsg = document.getElementById('errorMsg');
-      const tokenValue = document.getElementById('tokenValue');
+      tg = window.Telegram?.WebApp;
+      status = document.getElementById('status');
+      loader = document.getElementById('loader');
+      debugLog = document.getElementById('debugLog');
 
-      // Проверка окружения
       if (!tg) {
-        showError("❌ Откройте эту ссылку внутри приложения Telegram");
+        showError("❌ Откройте внутри Telegram");
         return;
       }
       
       tg.expand();
-      
       if (!tg.initData) {
-        showError("⚠️ Не удалось получить данные авторизации.\nУбедитесь, что мини-приложение открыто в правильном боте.");
+        showError("⚠️ Нет initData");
         return;
       }
 
+      log("📦 initData получен, длина: " + tg.initData.length);
+      await tryAuth();
+    };
+
+    async function tryAuth() {
       try {
-        status.innerText = "🔐 Отправка данных на сервер...";
+        status.innerText = "🔐 Отправка...";
+        const url = USE_PROXY ? PROXY_URL : TARGET_URL;
+        log("📤 Запрос к: " + url);
         
-        // Пытаемся отправить запрос
-        const response = await fetch(API_URL, {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
+        
+        const response = await fetch(url, {
           method: 'POST',
           mode: 'cors',
           headers: {
@@ -143,64 +176,113 @@
             'Accept': 'application/json'
           },
           body: 'initData=' + encodeURIComponent(tg.initData),
-          // Таймаут 10 секунд
-          signal: AbortSignal.timeout(10000)
+          signal: controller.signal
         });
-
-        const data = await response.json();
+        clearTimeout(timeout);
         
-        if (response.ok && data.code === 0 && data.token) {
-          // ✅ Успех
-          stepLoading.classList.add('hidden');
-          loader.style.display = 'none';
-          stepSuccess.classList.remove('hidden');
-          tokenValue.textContent = data.token;
+        log("📥 Статус: " + response.status);
+        
+        if (!response.ok) {
+          const text = await response.text();
+          log("⚠️ Ответ: " + text.substring(0, 200));
+          throw new Error('HTTP ' + response.status);
+        }
+        
+        const data = await response.json();
+        log("📦 Тело: " + JSON.stringify(data).substring(0, 200));
+        
+        if (data.code === 0 && data.token) {
+          showToken(data.token);
         } else {
-          // ❌ Ошибка валидации от сервера
-          const msg = data.msg || 'Неизвестная ошибка';
-          showError(`❌ Ошибка сервера: ${msg}\n(${data.code || 'code: N/A'})`);
+          throw new Error(data.msg || 'Код ' + data.code);
         }
       } catch (e) {
-        // ❌ Сетевая ошибка (чаще всего CORS)
-        console.error('Fetch error:', e);
+        log("❌ Ошибка: " + e.message);
         
-        if (e.name === 'TimeoutError') {
-          showError("⏱️ Таймаут подключения.\nПроверьте интернет и попробуйте ещё раз.");
-        } else {
-          // CORS или другая сетевая ошибка
-          showError("🔒 Не удалось подключиться к серверу авторизации.\n\nЭто может быть связано с настройками безопасности.\n\nИспользуйте ручной способ получения токена.");
+        // Если прокси не сработал — пробуем прямой запрос как запасной вариант
+        if (USE_PROXY && (e.message.includes('HTTP') || e.message.includes('Failed to fetch'))) {
+          log("🔄 Пробуем прямой запрос (без прокси)...");
+          // Временно отключаем прокси и пробуем ещё раз
+          const originalUseProxy = USE_PROXY;
+          // Перезапускаем с прямым запросом (упрощённо)
+          try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 10000);
+            const response = await fetch(TARGET_URL, {
+              method: 'POST',
+              mode: 'cors',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
+              body: 'initData=' + encodeURIComponent(tg.initData),
+              signal: controller.signal
+            });
+            clearTimeout(timeout);
+            if (response.ok) {
+              const data = await response.json();
+              if (data.code === 0 && data.token) {
+                showToken(data.token);
+                return;
+              }
+            }
+          } catch (e2) {
+            log("❌ Прямой запрос тоже не сработал: " + e2.message);
+          }
         }
+        
+        showError(e.message.includes('Failed to fetch') || e.name === 'TypeError' 
+          ? "🔒 CORS блокировка.\nСервер не разрешает запросы с этого домена." 
+          : "❌ " + e.message);
       }
-    };
+    }
+
+    function showToken(token) {
+      document.getElementById('stepLoading').classList.add('hidden');
+      loader.style.display = 'none';
+      document.getElementById('stepSuccess').classList.remove('hidden');
+      document.getElementById('tokenValue').textContent = token;
+      log("✅ Токен получен");
+    }
 
     function showError(message) {
       document.getElementById('stepLoading').classList.add('hidden');
-      document.getElementById('loader').style.display = 'none';
+      loader.style.display = 'none';
       document.getElementById('stepError').classList.remove('hidden');
       document.getElementById('errorMsg').innerText = message;
+      log("🛑 Стоп");
     }
 
-    function copyToken() {
-      const token = document.getElementById('tokenValue').textContent;
-      if (!token) return;
-      
-      navigator.clipboard.writeText(token).then(() => {
-        Telegram.WebApp.showPopup({
-          title: '✅ Готово!',
-          message: 'Токен скопирован в буфер обмена.\nТеперь вставьте его в чат с ботом.'
-        });
-      }).catch(() => {
-        alert('⚠️ Не удалось скопировать автоматически.\nВыделите текст токена и скопируйте вручную.');
-      });
+    function showManual() {
+      document.getElementById('manualBlock').classList.remove('hidden');
     }
 
-    function openPostman() {
-      // Открываем инструкцию в браузере (замените на вашу ссылку)
-      Telegram.WebApp.openLink('https://your-instructions.com/how-to-get-token');
+    function retryAuth() {
+      location.reload();
     }
 
     function closeApp() {
-      Telegram.WebApp.close();
+      tg.close();
+    }
+
+    async function copyToken() {
+      const token = document.getElementById('tokenValue').textContent;
+      if (!token) return;
+      try {
+        await navigator.clipboard.writeText(token);
+        if (tg?.showPopup) {
+          tg.showPopup({ title: '✅ Готово!', message: 'Токен скопирован. Вставьте в чат с ботом.' });
+        } else {
+          alert('✅ Токен скопирован!');
+        }
+      } catch {
+        alert('⚠️ Скопируйте вручную: выделите текст и нажмите Ctrl+C');
+      }
+    }
+
+    function log(msg) {
+      console.log(msg);
+      if (debugLog) {
+        debugLog.innerHTML += '<div>' + new Date().toLocaleTimeString() + ' ' + msg + '</div>';
+        debugLog.scrollTop = debugLog.scrollHeight;
+      }
     }
   </script>
 </body>
