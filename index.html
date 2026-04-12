@@ -2,25 +2,39 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Auth</title>
-  <!-- Библиотека Telegram WebApp -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <style>body { background: #1c1c1e; color: #fff; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }</style>
+  <style>
+    body { background: #1c1c1e; color: #fff; font-family: -apple-system, BlinkMacSystemFont, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+    .box { text-align: center; padding: 20px; }
+    .loader { width: 24px; height: 24px; border: 3px solid #4a4a4a; border-top-color: #007aff; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 10px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
 </head>
 <body>
-  <div id="status">🔄 Инициализация...</div>
+  <div class="box">
+    <div class="loader"></div>
+    <div id="status">🔄 Подключение...</div>
+  </div>
   <script>
     window.onload = function() {
       const tg = window.Telegram?.WebApp;
+      const status = document.getElementById('status');
+
       if (!tg) {
-        document.getElementById('status').innerText = "❌ Откройте это внутри Telegram";
+        status.innerText = "❌ Откройте это внутри Telegram";
         return;
       }
-      // Автоматически отправляем initData в бот и закрываем окно
+
       if (tg.initData) {
+        status.innerText = "✅ Отправляю данные...";
+        // Отправляем initData боту
         tg.sendData(tg.initData);
-        tg.close();
+        // Закрываем окно
+        setTimeout(() => tg.close(), 300);
+      } else {
+        status.innerText = "⚠️ Нет initData. Обновите приложение.";
       }
     };
   </script>
