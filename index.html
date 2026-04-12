@@ -3,40 +3,54 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Auth</title>
+  <title>Auth Debug</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
-    body { background: #1c1c1e; color: #fff; font-family: -apple-system, BlinkMacSystemFont, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-    .box { text-align: center; padding: 20px; }
-    .loader { width: 24px; height: 24px; border: 3px solid #4a4a4a; border-top-color: #007aff; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 10px; }
-    @keyframes spin { to { transform: rotate(360deg); } }
+    body { background: #1c1c1e; color: #fff; font-family: monospace; padding: 15px; margin: 0; font-size: 13px; }
+    .log { background: #2c2c2e; padding: 10px; border-radius: 8px; margin: 10px 0; }
+    .ok { color: #34c759; }
+    .err { color: #ff453a; }
+    .warn { color: #ff9f0a; }
   </style>
 </head>
 <body>
-  <div class="box">
-    <div class="loader"></div>
-    <div id="status">🔄 Подключение...</div>
-  </div>
+  <div id="log"></div>
   <script>
-    window.onload = function() {
-      const tg = window.Telegram?.WebApp;
-      const status = document.getElementById('status');
-
-      if (!tg) {
-        status.innerText = "❌ Откройте это внутри Telegram";
-        return;
-      }
-
-      if (tg.initData) {
-        status.innerText = "✅ Отправляю данные...";
-        // Отправляем initData боту
-        tg.sendData(tg.initData);
-        // Закрываем окно
-        setTimeout(() => tg.close(), 300);
-      } else {
-        status.innerText = "⚠️ Нет initData. Обновите приложение.";
-      }
+    const log = (msg, cls = '') => {
+      const div = document.createElement('div');
+      div.className = 'log ' + cls;
+      div.innerText = new Date().toLocaleTimeString() + ' ' + msg;
+      document.getElementById('log').appendChild(div);
     };
+
+    log('🚀 Страница загружена');
+
+    const tg = window.Telegram?.WebApp;
+    if (!tg) {
+      log('❌ Telegram.WebApp не найден. Откройте внутри Telegram.', 'err');
+    } else {
+      log('✅ Telegram.WebApp найден', 'ok');
+      log('📦 initData длина: ' + (tg.initData?.length || 0));
+      
+      if (tg.initData) {
+        log('🔄 Вызываю sendData()...');
+        try {
+          tg.sendData(tg.initData);
+          log('✅ sendData() вызван без ошибок', 'ok');
+          setTimeout(() => {
+            log('🔒 Закрываю окно...');
+            tg.close();
+          }, 500);
+        } catch (e) {
+          log('❌ Ошибка sendData(): ' + e.message, 'err');
+        }
+      } else {
+        log('⚠️ initData пуст. Возможные причины:', 'warn');
+        log('• Открыли в обычном браузере, а не в Telegram');
+        log('• Бот не совпадает с тем, что настроен в WebApp');
+        log('• Страница загружается по HTTP, а не HTTPS');
+      }
+    }
   </script>
 </body>
 </html>
