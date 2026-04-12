@@ -3,54 +3,51 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Auth Debug</title>
+  <title>Auth</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
-    body { background: #1c1c1e; color: #fff; font-family: monospace; padding: 15px; margin: 0; font-size: 13px; }
-    .log { background: #2c2c2e; padding: 10px; border-radius: 8px; margin: 10px 0; }
-    .ok { color: #34c759; }
-    .err { color: #ff453a; }
-    .warn { color: #ff9f0a; }
+    body { background: #1c1c1e; color: #fff; font-family: -apple-system, BlinkMacSystemFont, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+    .card { background: #2c2c2e; padding: 24px; border-radius: 16px; max-width: 320px; text-align: center; }
+    .status { font-size: 15px; margin: 16px 0 8px; line-height: 1.4; white-space: pre-line; }
+    .loader { width: 28px; height: 28px; border: 3px solid #4a4a4a; border-top-color: #007aff; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
-  <div id="log"></div>
+  <div class="card">
+    <div class="loader" id="loader"></div>
+    <div class="status" id="status">🔄 Подключение к Telegram...</div>
+  </div>
   <script>
-    const log = (msg, cls = '') => {
-      const div = document.createElement('div');
-      div.className = 'log ' + cls;
-      div.innerText = new Date().toLocaleTimeString() + ' ' + msg;
-      document.getElementById('log').appendChild(div);
-    };
+    window.onload = function() {
+      const tg = window.Telegram?.WebApp;
+      const status = document.getElementById('status');
+      const loader = document.getElementById('loader');
 
-    log('🚀 Страница загружена');
+      if (!tg) {
+        status.innerText = "❌ Откройте эту ссылку\nвнутри приложения Telegram";
+        loader.style.display = 'none';
+        return;
+      }
 
-    const tg = window.Telegram?.WebApp;
-    if (!tg) {
-      log('❌ Telegram.WebApp не найден. Откройте внутри Telegram.', 'err');
-    } else {
-      log('✅ Telegram.WebApp найден', 'ok');
-      log('📦 initData длина: ' + (tg.initData?.length || 0));
-      
-      if (tg.initData) {
-        log('🔄 Вызываю sendData()...');
+      if (tg.initData && tg.initData.length > 0) {
+        status.innerText = "📤 Отправляю initData боту...";
         try {
           tg.sendData(tg.initData);
-          log('✅ sendData() вызван без ошибок', 'ok');
-          setTimeout(() => {
-            log('🔒 Закрываю окно...');
-            tg.close();
-          }, 500);
+          status.innerText = "✅ Данные успешно отправлены!\nОкно закроется через 4 сек...";
+          loader.style.display = 'none';
+          
+          // ⏱️ Увеличил задержку до 4000мс, чтобы успеть прочитать
+          setTimeout(() => tg.close(), 4000);
         } catch (e) {
-          log('❌ Ошибка sendData(): ' + e.message, 'err');
+          status.innerText = "❌ Ошибка отправки:\n" + e.message;
+          loader.style.display = 'none';
         }
       } else {
-        log('⚠️ initData пуст. Возможные причины:', 'warn');
-        log('• Открыли в обычном браузере, а не в Telegram');
-        log('• Бот не совпадает с тем, что настроен в WebApp');
-        log('• Страница загружается по HTTP, а не HTTPS');
+        status.innerText = "⚠️ initData пуст.\nВозможные причины:\n• Ссылка не HTTPS\n• Бот в BotFather ≠ этому\n• Открыли в браузере";
+        loader.style.display = 'none';
       }
-    }
+    };
   </script>
 </body>
 </html>
