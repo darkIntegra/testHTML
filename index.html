@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Авторизация</title>
+  <title>Hamster Fight Assistant</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     body { 
@@ -60,6 +60,9 @@
       background: #3a3a3c;
       margin-top: 8px;
     }
+    .btn-danger {
+      background: #ff3b30;
+    }
     .loader { 
       width: 28px; 
       height: 28px; 
@@ -82,6 +85,26 @@
       max-height: 100px;
       overflow-y: auto;
     }
+    .admin-panel {
+      background: #3a3a3c;
+      padding: 12px;
+      border-radius: 8px;
+      margin: 10px 0;
+    }
+    .user-menu {
+      margin-top: 16px;
+    }
+    .access-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .badge-admin { background: #ff9500; color: #000; }
+    .badge-user { background: #34c759; color: #000; }
+    .badge-denied { background: #ff3b30; color: #fff; }
   </style>
 </head>
 <body>
@@ -90,156 +113,151 @@
     
     <!-- Шаг 1: Загрузка -->
     <div id="stepLoading">
-      <div class="status" id="status">🔄 Подключение...</div>
+      <div class="status" id="status">🔄 Подключение к Telegram...</div>
       <div class="log" id="debugLog"></div>
     </div>
     
-    <!-- Шаг 2: Успех -->
+    <!-- Шаг 2: Успех (универсальный) -->
     <div id="stepSuccess" class="hidden">
-      <div class="status" style="color:#34c759;">✅ Авторизация успешна!</div>
-      <div style="font-size:13px;color:#8e8e93;">Ваш токен:</div>
-      <div class="token" id="tokenValue" onclick="copyToken()"></div>
-      <button class="btn" onclick="copyToken()">📋 Скопировать</button>
-      <div style="font-size:12px;color:#8e8e93;margin-top:10px;">
-        Отправьте этот токен в бота <b>@YourBotName</b>
+      <div id="accessBadge" class="access-badge"></div>
+      <div class="status" id="successStatus"></div>
+      
+      <!-- Блок для админа -->
+      <div id="adminBlock" class="hidden admin-panel">
+        <div style="font-size:13px;color:#8e8e93;margin-bottom:8px;">👑 Панель администратора</div>
+        <button class="btn" onclick="openAdminPanel()">🌐 Открыть веб-админку</button>
+        <button class="btn btn-secondary" onclick="tg.close()">↩️ В бота</button>
+      </div>
+      
+      <!-- Блок для авторизованного пользователя -->
+      <div id="userBlock" class="hidden user-menu">
+        <div style="font-size:13px;color:#8e8e93;margin-bottom:8px;">Токен аккаунта:</div>
+        <div class="token" id="tokenValue" onclick="copyToken()"></div>
+        <button class="btn" onclick="copyToken()">📋 Скопировать токен</button>
+        
+        <div style="margin-top:16px;border-top:1px solid #4a4a4a;padding-top:16px;">
+          <button class="btn" onclick="startBattle()">⚔️ Начать бой</button>
+          <button class="btn btn-secondary" onclick="watchAds()">📺 Просмотреть рекламу</button>
+          <button class="btn btn-secondary" onclick="showStats()">📊 Статистика</button>
+        </div>
+        <button class="btn btn-secondary" onclick="tg.close()">↩️ В бота</button>
+      </div>
+      
+      <!-- Блок для отказа в доступе -->
+      <div id="deniedBlock" class="hidden">
+        <button class="btn btn-danger" onclick="tg.close()">↩️ В бота</button>
+        <div style="font-size:12px;color:#8e8e93;margin-top:12px;">
+          Для получения доступа обратитесь к администратору.
+        </div>
       </div>
     </div>
     
     <!-- Шаг 3: Ошибка -->
     <div id="stepError" class="hidden">
       <div class="status" id="errorMsg">❌ Ошибка</div>
-      <div style="font-size:13px;color:#8e8e93;margin:16px 0;">
-        <b>Автоматическая авторизация не сработала.</b><br><br>
-        Попробуйте:
-      </div>
       <button class="btn" onclick="retryAuth()">🔄 Повторить</button>
-      <button class="btn btn-secondary" onclick="showManual()">📝 Ручной ввод</button>
-      <button class="btn btn-secondary" onclick="closeApp()">↩️ В бота</button>
-      
-      <div id="manualBlock" class="hidden" style="margin-top:16px;text-align:left;">
-        <div style="font-size:12px;color:#8e8e93;">
-          1. Получите токен из главного источника (@MainBot или веб-интерфейс)<br>
-          2. Скопируйте его<br>
-          3. Вставьте сообщением в чат с этим ботом
-        </div>
-      </div>
+      <button class="btn btn-secondary" onclick="tg.close()">↩️ В бота</button>
     </div>
   </div>
 
   <script>
     // 🔥 Конфигурация
-    const TARGET_URL = 'https://node1.cl.hamsterpvp.com/prod/auth/telegram';
-    
-    // 🔥 ТВОЙ ПРОКСИ (уже вставлен!)
-    const PROXY_URL = 'https://auth-proxy.integra4220.workers.dev/auth/telegram';
-    
-    // Переключатель: true = использовать прокси, false = прямой запрос
-    const USE_PROXY = true;
-    
-    let tg, status, loader, debugLog;
+    const API_BASE = 'https://your-backend-domain.com/api/telegram';
+
+    let tg, statusEl, loader, debugLog;
     
     window.onload = async function() {
       tg = window.Telegram?.WebApp;
-      status = document.getElementById('status');
+      statusEl = document.getElementById('status');
       loader = document.getElementById('loader');
       debugLog = document.getElementById('debugLog');
 
       if (!tg) {
-        showError("❌ Откройте внутри Telegram");
+        showError("❌ Откройте эту страницу внутри Telegram");
         return;
       }
       
       tg.expand();
-      if (!tg.initData) {
-        showError("⚠️ Нет initData");
+      
+      // Получаем chat_id из initData Telegram
+      if (!tg.initDataUnsafe?.user?.id) {
+        showError("⚠️ Не удалось получить ваш chat_id");
         return;
       }
-
-      log("📦 initData получен, длина: " + tg.initData.length);
-      await tryAuth();
+      
+      const chatId = tg.initDataUnsafe.user.id;
+      log("👤 Пользователь: chat_id=" + chatId);
+      
+      await checkAccess(chatId);
     };
 
-    async function tryAuth() {
+    async function checkAccess(chatId) {
       try {
-        status.innerText = "🔐 Отправка...";
-        const url = USE_PROXY ? PROXY_URL : TARGET_URL;
-        log("📤 Запрос к: " + url);
+        statusEl.innerText = "🔐 Проверка доступа...";
+        log("📤 Запрос к: " + API_BASE + "/access?chatId=" + chatId);
         
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 10000);
-        
-        const response = await fetch(url, {
-          method: 'POST',
-          mode: 'cors',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Accept': 'application/json'
-          },
-          body: 'initData=' + encodeURIComponent(tg.initData),
-          signal: controller.signal
+        const response = await fetch(API_BASE + '/access?chatId=' + chatId, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' }
         });
-        clearTimeout(timeout);
         
-        log("📥 Статус: " + response.status);
+        log("📥 Статус ответа: " + response.status);
         
         if (!response.ok) {
-          const text = await response.text();
-          log("⚠️ Ответ: " + text.substring(0, 200));
           throw new Error('HTTP ' + response.status);
         }
         
         const data = await response.json();
-        log("📦 Тело: " + JSON.stringify(data).substring(0, 200));
+        log("📦 Ответ: " + JSON.stringify(data));
         
-        if (data.code === 0 && data.token) {
-          showToken(data.token);
-        } else {
-          throw new Error(data.msg || 'Код ' + data.code);
-        }
+        handleAccessResponse(data);
+        
       } catch (e) {
         log("❌ Ошибка: " + e.message);
-        
-        // Если прокси не сработал — пробуем прямой запрос как запасной вариант
-        if (USE_PROXY && (e.message.includes('HTTP') || e.message.includes('Failed to fetch'))) {
-          log("🔄 Пробуем прямой запрос (без прокси)...");
-          // Временно отключаем прокси и пробуем ещё раз
-          const originalUseProxy = USE_PROXY;
-          // Перезапускаем с прямым запросом (упрощённо)
-          try {
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 10000);
-            const response = await fetch(TARGET_URL, {
-              method: 'POST',
-              mode: 'cors',
-              headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
-              body: 'initData=' + encodeURIComponent(tg.initData),
-              signal: controller.signal
-            });
-            clearTimeout(timeout);
-            if (response.ok) {
-              const data = await response.json();
-              if (data.code === 0 && data.token) {
-                showToken(data.token);
-                return;
-              }
-            }
-          } catch (e2) {
-            log("❌ Прямой запрос тоже не сработал: " + e2.message);
-          }
-        }
-        
-        showError(e.message.includes('Failed to fetch') || e.name === 'TypeError' 
-          ? "🔒 CORS блокировка.\nСервер не разрешает запросы с этого домена." 
-          : "❌ " + e.message);
+        showError("❌ Ошибка подключения: " + e.message);
       }
     }
 
-    function showToken(token) {
+    function handleAccessResponse(data) {
+      // Скрываем загрузку
       document.getElementById('stepLoading').classList.add('hidden');
       loader.style.display = 'none';
       document.getElementById('stepSuccess').classList.remove('hidden');
-      document.getElementById('tokenValue').textContent = token;
-      log("✅ Токен получен");
+      
+      const badge = document.getElementById('accessBadge');
+      const successStatus = document.getElementById('successStatus');
+      
+      // === УРОВЕНЬ 1: АДМИН ===
+      if (data.level === 'ADMIN') {
+        badge.textContent = '👑 АДМИНИСТРАТОР';
+        badge.className = 'access-badge badge-admin';
+        successStatus.innerHTML = `<b>Полный доступ</b><br>chat_id: ${data.chatId || '—'}`;
+        
+        document.getElementById('adminBlock').classList.remove('hidden');
+        document.getElementById('userBlock').classList.add('hidden');
+        document.getElementById('deniedBlock').classList.add('hidden');
+        
+      // === УРОВЕНЬ 2: АВТОРИЗОВАННЫЙ ПОЛЬЗОВАТЕЛЬ ===
+      } else if (data.level === 'AUTHORIZED') {
+        badge.textContent = '✅ АВТОРИЗОВАН';
+        badge.className = 'access-badge badge-user';
+        successStatus.innerHTML = `<b>${data.accountName || 'Аккаунт'}</b><br>Доступ разрешён`;
+        
+        document.getElementById('tokenValue').textContent = data.token || '—';
+        document.getElementById('adminBlock').classList.add('hidden');
+        document.getElementById('userBlock').classList.remove('hidden');
+        document.getElementById('deniedBlock').classList.add('hidden');
+        
+      // === УРОВЕНЬ 3: ОТКАЗ В ДОСТУПЕ ===
+      } else {
+        badge.textContent = '❌ ДОСТУП ЗАПРЕЩЁН';
+        badge.className = 'access-badge badge-denied';
+        successStatus.innerHTML = `<b>Нет доступа</b><br>${data.message || 'Обратитесь к администратору'}`;
+        
+        document.getElementById('adminBlock').classList.add('hidden');
+        document.getElementById('userBlock').classList.add('hidden');
+        document.getElementById('deniedBlock').classList.remove('hidden');
+      }
     }
 
     function showError(message) {
@@ -250,37 +268,56 @@
       log("🛑 Стоп");
     }
 
-    function showManual() {
-      document.getElementById('manualBlock').classList.remove('hidden');
-    }
-
     function retryAuth() {
       location.reload();
     }
 
-    function closeApp() {
-      tg.close();
-    }
-
     async function copyToken() {
       const token = document.getElementById('tokenValue').textContent;
-      if (!token) return;
+      if (!token || token === '—') return;
       try {
         await navigator.clipboard.writeText(token);
-        if (tg?.showPopup) {
-          tg.showPopup({ title: '✅ Готово!', message: 'Токен скопирован. Вставьте в чат с ботом.' });
-        } else {
-          alert('✅ Токен скопирован!');
-        }
+        tg?.showPopup?.({ title: '✅ Готово!', message: 'Токен скопирован в буфер обмена.' });
       } catch {
         alert('⚠️ Скопируйте вручную: выделите текст и нажмите Ctrl+C');
       }
     }
 
+    // === Кнопки действий (заглушки — потом реализую на бекенде⚠️) ===
+    
+    function startBattle() {
+      tg?.showPopup?.({ 
+        title: '⚔️ Бой', 
+        message: 'Запуск боя...\n(реализуй вызов API на бекенде)' 
+      });
+      // Пример реального вызова:
+      // fetch(API_BASE + '/battle/start', { method: 'POST', body: JSON.stringify({ accountId: '...' }) });
+    }
+
+    function watchAds() {
+      tg?.showPopup?.({ 
+        title: '📺 Реклама', 
+        message: 'Просмотр рекламы...\n(реализуй вызов API на бекенде)' 
+      });
+    }
+
+    function showStats() {
+      tg?.showPopup?.({ 
+        title: '📊 Статистика', 
+        message: 'Загрузка статистики...\n(реализуй вызов API на бекенде)' 
+      });
+    }
+
+    function openAdminPanel() {
+      // Открываем веб-админку в новом окне (или редирект)
+      window.open('https://darkIntegra.github.io/testHTML/admin.html', '_blank');
+      // Или: window.location.href = '/admin';
+    }
+
     function log(msg) {
       console.log(msg);
       if (debugLog) {
-        debugLog.innerHTML += '<div>' + new Date().toLocaleTimeString() + ' ' + msg + '</div>';
+        debugLog.innerHTML += '<div>[' + new Date().toLocaleTimeString() + '] ' + msg + '</div>';
         debugLog.scrollTop = debugLog.scrollHeight;
       }
     }
